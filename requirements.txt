@@ -1,0 +1,11 @@
+# install torch/torchvision first with the CUDA build matching your machine, e.g.
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+torch>=2.0
+torchvision>=0.15
+timm
+tqdm
+numpy
+lmdb
+ftfy
+regex
+clip @ git+https://github.com/openai/CLIP.git
