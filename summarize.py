@@ -67,6 +67,13 @@ def main():
     print(sep)
     print("\n".join(rows))
 
+    extras = sorted(k for k in r if k.startswith("ares_") and k.count("_") > 2)
+    if extras:
+        print("\nExtra runs:")
+        for k in extras:
+            d = r[k]
+            print(f"  {k}: best {100 * d['best_test_acc']:.2f}, final {100 * d['final_test_acc']:.2f}")
+
 
 if __name__ == "__main__":
     main()

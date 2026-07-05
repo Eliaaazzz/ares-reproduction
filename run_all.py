@@ -16,7 +16,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def run(script, **kw):
     cmd = [sys.executable, os.path.join(HERE, script)]
     for k, v in kw.items():
-        cmd += [f"--{k.replace('_', '-')}", str(v)]
+        flag = f"--{k.replace('_', '-')}"
+        if v is True:
+            cmd.append(flag)
+        else:
+            cmd += [flag, str(v)]
     print(">>", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
