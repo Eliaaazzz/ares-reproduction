@@ -16,6 +16,9 @@ paper's stated few-shot protocol; --shots -1 follows the released code.
 import argparse
 import os
 
+# reduce fragmentation; stage 2 backprops through the full ViT on an 8GB card
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,7 +30,7 @@ from tqdm import tqdm
 from datasets import (ALL_DATASETS, SOURCE_SIZE, TRAIN_BATCH, get_dataset,
                       few_shot_indices, vr_transform, materialize)
 from mapping import blmp_matrix, apply_mapping
-from models import primed_model
+from models import primed_model, pretrained_model
 from templates import IMAGENET_NORM, CLIP_NORM
 from util import set_seed, save_json
 
@@ -62,7 +65,12 @@ def main():
     p.add_argument("--head-select", choices=["test_kl", "train_kl", "last"], default="test_kl")
     p.add_argument("--prime-criterion", default="kl", help="which priming run to load")
     p.add_argument("--norm", choices=["imagenet", "clip"], default="imagenet")
+    p.add_argument("--no-prime", action="store_true",
+                   help="reprogram the raw ImageNet model instead (component ablation)")
     p.add_argument("--eval-every", type=int, default=0, help="0 = pick automatically from test size")
+    p.add_argument("--micro-batch", type=int, default=64,
+                   help="gradient-accumulation chunk; the logical batch (and thus the "
+                        "optimization) still matches the official batch size")
     p.add_argument("--data-dir", default="./data")
     p.add_argument("--runs-dir", default="./runs")
     p.add_argument("--results-dir", default="./results")
@@ -77,7 +85,12 @@ def main():
     ckpt = torch.load(os.path.join(args.runs_dir, f"prime_{prime_tag}.pt"))
     class_names = ckpt["classes"]
     num_classes = len(class_names)
-    network = primed_model(args.student, num_classes, ckpt["heads"][args.head_select], device)
+    if args.no_prime:
+        # 1000-way ImageNet outputs; BLM+ takes care of the label spaces
+        assert args.mapping == "blmp"
+        network = pretrained_model(args.student, device)
+    else:
+        network = primed_model(args.student, num_classes, ckpt["heads"][args.head_select], device)
 
     # ---- data ----
     tf = vr_transform(args.dataset)
@@ -92,7 +105,8 @@ def main():
     test_ds = materialize(test_ds, num_workers=args.num_workers)
 
     train_loader = DataLoader(train_ds, batch_size=TRAIN_BATCH[args.dataset], shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=256, shuffle=False)
+    blm_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
     print(f"{args.dataset}: {len(train_ds)} train / {len(test_ds)} test, {num_classes} classes")
 
     norm_stats = IMAGENET_NORM if args.norm == "imagenet" else CLIP_NORM
@@ -102,7 +116,7 @@ def main():
     opt = torch.optim.Adam(prompt.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.MultiStepLR(
         opt, milestones=[int(0.5 * args.epochs), int(0.72 * args.epochs)], gamma=0.1)
-    scaler = GradScaler()
+    scaler = GradScaler("cuda")
 
     if args.eval_every > 0:
         eval_every = args.eval_every
@@ -129,22 +143,25 @@ def main():
     for epoch in pbar:
         matrix = None
         if args.mapping == "blmp":
-            matrix = blmp_matrix(prompt, network, train_loader, device, num_classes)
+            matrix = blmp_matrix(prompt, network, blm_loader, device, num_classes)
 
         prompt.train()
         correct = total = 0
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
-            with autocast("cuda"):
-                fx = network(prompt(x))
-                if matrix is not None:
-                    fx = apply_mapping(fx, matrix)
-                loss = F.cross_entropy(fx, y)
-            scaler.scale(loss).backward()
+            # micro-batches with loss weighted by size => same update as one big batch
+            for i in range(0, len(x), args.micro_batch):
+                xm, ym = x[i:i + args.micro_batch], y[i:i + args.micro_batch]
+                with autocast("cuda"):
+                    fx = network(prompt(xm))
+                    if matrix is not None:
+                        fx = apply_mapping(fx, matrix)
+                    loss = F.cross_entropy(fx, ym) * (len(xm) / len(x))
+                scaler.scale(loss).backward()
+                correct += (fx.argmax(1) == ym).sum().item()
             scaler.step(opt)
             scaler.update()
-            correct += (fx.argmax(1) == y).sum().item()
             total += y.size(0)
         sched.step()
         log["train_acc"].append(correct / total)

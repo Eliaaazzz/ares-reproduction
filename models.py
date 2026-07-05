@@ -27,6 +27,15 @@ def extract_features(model, images, device):
     return model.forward_head(feats, pre_logits=True).cpu()
 
 
+def pretrained_model(name, device):
+    """Unmodified ImageNet classifier (for the no-priming ablation)."""
+    model = timm.create_model(TIMM_NAMES[name], pretrained=True)
+    model.to(device)
+    model.eval()
+    model.requires_grad_(False)
+    return model
+
+
 def primed_model(name, num_classes, head_state, device):
     """Backbone + the linear head trained in the priming stage, frozen."""
     model = timm.create_model(TIMM_NAMES[name], pretrained=True)
