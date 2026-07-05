@@ -5,6 +5,7 @@ torchvision>=0.15
 timm
 tqdm
 numpy
+scipy
 lmdb
 ftfy
 regex
