@@ -1,0 +1,5 @@
+{
+  "dataset": "flowers102",
+  "test_acc": 0.7080795777507105,
+  "n_test": 2463
+}

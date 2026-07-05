@@ -1,0 +1,5 @@
+{
+  "dataset": "oxfordpets",
+  "test_acc": 0.8904333605887162,
+  "n_test": 3669
+}
