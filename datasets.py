@@ -42,6 +42,11 @@ def refine_classnames(class_names):
     return [c.lower().replace("_", " ").replace("-", " ") for c in class_names]
 
 
+def to_rgb(img):
+    # module-level (not a lambda) so transforms pickle into Windows DataLoader workers
+    return img.convert("RGB")
+
+
 class CoopLMDB(Dataset):
     """Reader for the CoOp-split LMDB datasets.
 
@@ -84,13 +89,15 @@ class CoopLMDB(Dataset):
         return img, target
 
     def scan_labels(self):
-        # label-only pass, avoids decoding images
-        if self.env is None:
-            self._open()
+        # label-only pass, avoids decoding images. Uses a short-lived env so
+        # the dataset object stays picklable for DataLoader workers.
+        env = lmdb.open(self.db_path, subdir=os.path.isdir(self.db_path),
+                        readonly=True, lock=False, readahead=False, meminit=False)
         labels = []
-        with self.env.begin(write=False) as txn:
+        with env.begin(write=False) as txn:
             for k in self.keys:
                 labels.append(pickle.loads(txn.get(k))[1])
+        env.close()
         return labels
 
 
@@ -138,19 +145,15 @@ def few_shot_indices(ds, n_per_class, seed):
 
 
 def clip_transform(preprocess, name):
-    # CLIP's own preprocess; LMDB images may be grayscale so force RGB first
-    if name in LMDB_DATASETS:
-        return transforms.Compose([transforms.Lambda(lambda x: x.convert("RGB")), preprocess])
+    # CLIP's preprocess already includes an RGB conversion
     return preprocess
 
 
 def vr_transform(name):
     """Transform for the reprogramming stage (no augmentation, like ILM-VP)."""
     size = SOURCE_SIZE[name]
-    ops = []
-    if name in LMDB_DATASETS:
-        ops.append(transforms.Lambda(lambda x: x.convert("RGB")))
-    if name != "svhn":  # svhn is already 32x32
+    ops = [transforms.Lambda(to_rgb)]
+    if name != "svhn":  # svhn is already 32x32 RGB
         ops.append(transforms.Resize((size, size)))
     ops.append(transforms.ToTensor())
     return transforms.Compose(ops)
