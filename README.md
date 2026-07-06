@@ -66,23 +66,24 @@ python reprogram.py --dataset eurosat --seed 0
 
 ## Results
 
-Best-epoch test accuracy, seed 0 (the 3-seed averages are still running and
-will replace this table). Paper numbers are the corresponding columns of
-Table 2.
+Test accuracy over 3 seeds (mean ± std), 16-shot as stated in the paper. Paper
+rows are the corresponding columns of Table 2 (single numbers as reported).
 
 | Method | flowers102 | dtd | eurosat | oxfordpets | svhn | gtsrb | Avg |
 |---|---|---|---|---|---|---|---|
 | Zero-shot CLIP (mine) | 70.8 | 43.9 | 48.3 | 89.0 | 19.9 | 21.0 | 48.8 |
 | Zero-shot CLIP (paper) | 71.3 | 43.9 | 47.9 | 89.1 | 17.9 | 21.0 | 48.7 |
-| Priming only (mine) | 72.8 | 39.1 | 41.2 | 86.9 | 8.7 | 10.4 | 43.2 |
-| **AReS, 16-shot as stated in the paper (mine)** | 80.6 | 43.9 | 76.2 | 80.5 | 19.9 | 18.1 | 53.2 |
-| AReS final-epoch instead of best (mine) | 79.0 | 40.4 | 74.2 | 77.7 | 17.4 | 17.9 | 51.1 |
+| Priming only (mine) | 71.7 ± 0.9 | 39.7 ± 0.5 | 43.1 ± 2.7 | 86.1 ± 1.1 | 8.1 ± 0.6 | 9.8 ± 0.8 | 43.1 |
+| **AReS, best epoch (mine)** | 80.5 ± 1.1 | 44.3 ± 0.4 | 74.9 ± 3.3 | 80.5 ± 1.0 | 21.8 ± 1.7 | 19.6 ± 1.5 | 53.6 |
+| AReS, final epoch (mine) | 78.9 ± 0.1 | 40.7 ± 0.4 | 74.2 ± 3.1 | 76.9 ± 0.7 | 19.8 ± 2.4 | 19.1 ± 1.0 | 51.6 |
 | AReS (paper Table 2) | 86.6 | 48.2 | 85.7 | 88.9 | 63.2 | 39.4 | 67.0 |
 | BlackVIP (paper Table 2) | 70.6 | 45.3 | 73.3 | 89.1 | 44.4 | 21.3 | 57.3 |
 
-The zero-shot row matching the paper (±0.5, ±2.0 on svhn) says the service
-model, templates and splits are faithful. The 16-shot AReS row does not match
-Table 2 — which brings us to the protocol question.
+The zero-shot row matches the paper across all six datasets (±0.5, ±2.0 on
+svhn), so the service model, templates and splits are faithful. The 16-shot
+AReS row lands well above zero-shot and the ZOO baselines but below Table 2 —
+which brings us to the protocol question. Per-seed numbers are in
+`results/ares_<dataset>_s<seed>.json`.
 
 ### Which protocol produced Table 2?
 
@@ -110,12 +111,12 @@ with only the priming stage actually few-shot. Happy to be corrected if the
 
 Two related observations:
 
-* Where the service teacher is near-random (svhn 17.9%, gtsrb 21.0%
-  zero-shot), priming distills a near-random head (8.7% / 10.4%), and 16
+* Where the service teacher is near-random (svhn 19.9%, gtsrb 21.0%
+  zero-shot), priming distills a near-random head (8.1% / 9.8%), and 16
   labeled shots per class cannot climb out of that hole — those two paper
   numbers seem unreachable without the full label set.
 * Where the teacher is strong, the opposite failure appears: on oxfordpets the
-  16-shot prompt *hurts* (priming-only 86.9 → AReS 80.5), i.e. the visual
+  16-shot prompt *hurts* (priming-only 86.1 → AReS 80.5), i.e. the visual
   prompt overfits 592 images.
 
 ### Ablations (eurosat, seed 0, best epoch)
@@ -138,7 +139,7 @@ Two related observations:
   choice — beats the released code's test-split selection by 4.4 points, so
   the test-set quirk is not even buying accuracy.
 * In the strict 16-shot regime priming contributes ~nothing on eurosat (75.9
-  without it); its value shows up when the teacher is strong (pets 86.9
+  without it); its value shows up when the teacher is strong (pets 86.1
   priming-only). The +15-point priming effect in the paper's Table 6 likely
   also reflects the full-split protocol.
 * With aligned label spaces, identity mapping edges out BLM+ — consistent
